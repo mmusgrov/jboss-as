@@ -257,4 +257,10 @@ public class TransactionSubsystemRootResourceDefinition extends SimpleResourceDe
             TxStatsHandler.INSTANCE.registerMetrics(resourceRegistration);
         }
     }
+
+    @Override
+    public void registerChildren(ManagementResourceRegistration resourceRegistration) {
+        resourceRegistration.registerSubModel(new LLRResourceResourceDefinition());
+    }
+
 }
