@@ -24,6 +24,7 @@
 
 package org.jboss.as.connector.subsystems.datasources;
 
+import static org.jboss.as.connector.subsystems.datasources.Constants.CONNECTABLE;
 import static org.jboss.as.connector.subsystems.datasources.Constants.CONNECTION_LISTENER_CLASS;
 import static org.jboss.as.connector.subsystems.datasources.Constants.CONNECTION_LISTENER_PROPERTIES;
 import static org.jboss.as.connector.subsystems.datasources.Constants.DATASOURCE_DISABLE;
@@ -159,8 +160,9 @@ public class XaDataSourceDefinition extends SimpleResourceDefinition {
                 org.jboss.as.connector.subsystems.common.pool.Constants.CAPACITY_INCREMENTER_CLASS, org.jboss.as.connector.subsystems.common.pool.Constants.CAPACITY_DECREMENTER_CLASS,
                 org.jboss.as.connector.subsystems.common.pool.Constants.CAPACITY_INCREMENTER_PROPERTIES, org.jboss.as.connector.subsystems.common.pool.Constants.CAPACITY_DECREMENTER_PROPERTIES)
                 .setDiscard(DiscardAttributeChecker.ALWAYS, ENABLED)
+                .setDiscard(new DiscardAttributeChecker.DiscardAttributeValueChecker(new ModelNode(false)), CONNECTABLE)
                 .addRejectCheck(RejectAttributeChecker.SIMPLE_EXPRESSIONS, DATASOURCE_PROPERTIES_ATTRIBUTES)
-                        //.setValueConverter(AttributeConverter.Factory.createHardCoded(new ModelNode(false)), JTA)
+                .addRejectCheck(RejectAttributeChecker.DEFINED, CONNECTABLE)
                 .end();
     }
 
@@ -195,10 +197,14 @@ public class XaDataSourceDefinition extends SimpleResourceDefinition {
                         return true;
                     }
                 }, ENABLED)
+                .setDiscard(new DiscardAttributeChecker.DiscardAttributeValueChecker(new ModelNode(false)), CONNECTABLE)
                 .addRejectCheck(RejectAttributeChecker.DEFINED, org.jboss.as.connector.subsystems.common.pool.Constants.INITIAL_POOL_SIZE,
                         CONNECTION_LISTENER_CLASS, CONNECTION_LISTENER_PROPERTIES, URL_PROPERTY,
-                        org.jboss.as.connector.subsystems.common.pool.Constants.CAPACITY_INCREMENTER_CLASS, org.jboss.as.connector.subsystems.common.pool.Constants.CAPACITY_DECREMENTER_CLASS,
-                        org.jboss.as.connector.subsystems.common.pool.Constants.CAPACITY_INCREMENTER_PROPERTIES, org.jboss.as.connector.subsystems.common.pool.Constants.CAPACITY_DECREMENTER_PROPERTIES)
+                        org.jboss.as.connector.subsystems.common.pool.Constants.CAPACITY_INCREMENTER_CLASS,
+                        org.jboss.as.connector.subsystems.common.pool.Constants.CAPACITY_DECREMENTER_CLASS,
+                        org.jboss.as.connector.subsystems.common.pool.Constants.CAPACITY_INCREMENTER_PROPERTIES,
+                        org.jboss.as.connector.subsystems.common.pool.Constants.CAPACITY_DECREMENTER_PROPERTIES,
+                        CONNECTABLE)
                 .end();
         builder.addOperationTransformationOverride(ModelDescriptionConstants.WRITE_ATTRIBUTE_OPERATION)
                 .inheritResourceAttributeDefinitions()
@@ -210,4 +216,12 @@ public class XaDataSourceDefinition extends SimpleResourceDefinition {
                 .end();
     }
 
+    static void registerTransformers200(ResourceTransformationDescriptionBuilder parentBuilder) {
+        ResourceTransformationDescriptionBuilder builder = parentBuilder.addChildResource(PATH_XA_DATASOURCE);
+        builder.getAttributeBuilder()
+                .setDiscard(new DiscardAttributeChecker.DiscardAttributeValueChecker(new ModelNode(false)), CONNECTABLE)
+                .addRejectCheck(RejectAttributeChecker.DEFINED, CONNECTABLE)
+                .end();
+
+       }
 }
