@@ -26,9 +26,13 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import com.arjuna.ats.arjuna.recovery.ResumableService;
 import org.jboss.as.network.ManagedBinding;
 import org.jboss.as.network.SocketBinding;
 import org.jboss.as.network.SocketBindingManager;
+import org.jboss.as.server.suspend.ServerActivity;
+import org.jboss.as.server.suspend.ServerActivityCallback;
+import org.jboss.as.server.suspend.SuspendController;
 import org.jboss.as.txn.logging.TransactionLogger;
 import org.jboss.msc.inject.Injector;
 import org.jboss.msc.service.Service;
@@ -66,11 +70,37 @@ public class ArjunaRecoveryManagerService implements Service<RecoveryManagerServ
     private final InjectedValue<ORB> orbInjector = new InjectedValue<ORB>();
     private final InjectedValue<SocketBinding> recoveryBindingInjector = new InjectedValue<SocketBinding>();
     private final InjectedValue<SocketBinding> statusBindingInjector = new InjectedValue<SocketBinding>();
+    private final InjectedValue<SuspendController> suspendControllerInjectedValue = new InjectedValue<>();
 
     private RecoveryManagerService recoveryManagerService;
     private boolean recoveryListener;
     private final boolean jts;
     private InjectedValue<SocketBindingManager> bindingManager = new InjectedValue<SocketBindingManager>();
+    private SuspendController suspendController;
+    private ResumableService resumableService;
+    private final ServerActivity serverActivity = new ServerActivity() {
+        @Override
+        public void preSuspend(ServerActivityCallback listener) {
+            deactivate();
+            listener.done();
+        }
+
+        public void suspended(ServerActivityCallback listener) {
+            System.out.printf("ArjunaRecoveryManagerService suspended ...%n");
+            if (resumableService == null)
+                System.out.printf("ArjunaRecoveryManagerService service did not get the preSuspend callback%n");
+            else if (resumableService.isSuspended())
+                listener.done();
+            else
+                System.out.printf("but ArjunaRecoveryManagerService service is still active ...%n");
+        }
+
+        @Override
+        public void resume() {
+            if (resumableService != null)
+                activate();
+        }
+    };
 
     public ArjunaRecoveryManagerService(final boolean recoveryListener, final boolean jts) {
         this.recoveryListener = recoveryListener;
@@ -78,7 +108,7 @@ public class ArjunaRecoveryManagerService implements Service<RecoveryManagerServ
     }
 
     public synchronized void start(StartContext context) throws StartException {
-
+        suspendController = suspendControllerInjectedValue.getValue();
         // Recovery env bean
         final RecoveryEnvironmentBean recoveryEnvironmentBean = recoveryPropertyManager.getRecoveryEnvironmentBean();
         final SocketBinding recoveryBinding = recoveryBindingInjector.getValue();
@@ -138,7 +168,6 @@ public class ArjunaRecoveryManagerService implements Service<RecoveryManagerServ
             recoveryEnvironmentBean.setExpiryScannerClassNames(expiryScanners);
             recoveryEnvironmentBean.setRecoveryActivatorClassNames(Collections.singletonList(com.arjuna.ats.internal.jts.orbspecific.recovery.RecoveryEnablement.class.getName()));
 
-
             try {
                 final RecoveryManagerService recoveryManagerService = new com.arjuna.ats.jbossatx.jts.RecoveryManagerService(orb);
                 recoveryManagerService.create();
@@ -148,9 +177,12 @@ public class ArjunaRecoveryManagerService implements Service<RecoveryManagerServ
                 throw TransactionLogger.ROOT_LOGGER.managerStartFailure(e, "Recovery");
             }
         }
+
+        suspendController.registerActivity(serverActivity);
     }
 
     public synchronized void stop(StopContext context) {
+        suspendController.unRegisterActivity(serverActivity);
         try {
             recoveryManagerService.stop();
         } catch (Exception e) {
@@ -158,6 +190,16 @@ public class ArjunaRecoveryManagerService implements Service<RecoveryManagerServ
         }
         recoveryManagerService.destroy();
         recoveryManagerService = null;
+    }
+
+    private void activate() {
+        System.out.printf("ArjunaRecoveryManagerService resuming ...%n");
+        resumableService.resumeService();
+    }
+
+    private void deactivate() {
+        System.out.printf("ArjunaRecoveryManagerService suspending ...%n");
+        resumableService = getValue().suspendService();
     }
 
     public synchronized RecoveryManagerService getValue() throws IllegalStateException, IllegalArgumentException {
@@ -178,5 +220,9 @@ public class ArjunaRecoveryManagerService implements Service<RecoveryManagerServ
 
     public Injector<SocketBindingManager> getBindingManager() {
         return bindingManager;
+    }
+
+    public InjectedValue<SuspendController> getSuspendControllerInjectedValue() {
+        return suspendControllerInjectedValue;
     }
 }

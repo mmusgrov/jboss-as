@@ -54,6 +54,7 @@ import org.jboss.as.network.SocketBindingManager;
 import org.jboss.as.server.AbstractDeploymentChainStep;
 import org.jboss.as.server.DeploymentProcessorTarget;
 import org.jboss.as.server.deployment.Phase;
+import org.jboss.as.server.suspend.SuspendController;
 import org.jboss.as.txn.deployment.TransactionDependenciesProcessor;
 import org.jboss.as.txn.deployment.TransactionJndiBindingProcessor;
 import org.jboss.as.txn.deployment.TransactionLeakRollbackProcessor;
@@ -395,6 +396,9 @@ class TransactionSubsystemAdd extends AbstractBoottimeAddStepHandler {
 
         final ArjunaRecoveryManagerService recoveryManagerService = new ArjunaRecoveryManagerService(recoveryListener, jts);
         final ServiceBuilder<RecoveryManagerService> recoveryManagerServiceServiceBuilder = context.getServiceTarget().addService(TxnServices.JBOSS_TXN_ARJUNA_RECOVERY_MANAGER, recoveryManagerService);
+
+        recoveryManagerServiceServiceBuilder.addDependency(SuspendController.SERVICE_NAME, SuspendController.class, recoveryManagerService.getSuspendControllerInjectedValue());
+
         // add dependency on JTA environment bean
         recoveryManagerServiceServiceBuilder.addDependencies(deps);
 
@@ -430,6 +434,7 @@ class TransactionSubsystemAdd extends AbstractBoottimeAddStepHandler {
         final ServiceBuilder<com.arjuna.ats.jbossatx.jta.TransactionManagerService> transactionManagerServiceServiceBuilder = context.getServiceTarget().addService(TxnServices.JBOSS_TXN_ARJUNA_TRANSACTION_MANAGER, transactionManagerService);
         // add dependency on JTA environment bean service
         transactionManagerServiceServiceBuilder.addDependency(TxnServices.JBOSS_TXN_JTA_ENVIRONMENT, JTAEnvironmentBean.class, transactionManagerService.getJTAEnvironmentBeanInjector());
+        transactionManagerServiceServiceBuilder.addDependency(SuspendController.SERVICE_NAME, SuspendController.class, transactionManagerService.getSuspendControllerInjectedValue());
 
         //if jts is enabled we need the ORB
         if (jts) {

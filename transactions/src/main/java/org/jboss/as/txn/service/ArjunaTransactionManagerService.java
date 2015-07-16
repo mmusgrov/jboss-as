@@ -24,9 +24,13 @@ package org.jboss.as.txn.service;
 
 import com.arjuna.ats.arjuna.common.CoordinatorEnvironmentBean;
 import com.arjuna.ats.arjuna.common.arjPropertyManager;
+import com.arjuna.ats.arjuna.recovery.ResumableService;
 import com.arjuna.ats.arjuna.tools.osb.mbean.ObjStoreBrowser;
 import com.arjuna.ats.jta.common.JTAEnvironmentBean;
 import com.arjuna.orbportability.internal.utils.PostInitLoader;
+import org.jboss.as.server.suspend.ServerActivity;
+import org.jboss.as.server.suspend.ServerActivityCallback;
+import org.jboss.as.server.suspend.SuspendController;
 import org.jboss.as.txn.logging.TransactionLogger;
 import org.jboss.as.txn.service.internal.tsr.TransactionSynchronizationRegistryWrapper;
 import org.jboss.msc.inject.Injector;
@@ -59,7 +63,7 @@ public final class ArjunaTransactionManagerService implements Service<com.arjuna
     private final InjectedValue<ORB> orbInjector = new InjectedValue<ORB>();
     private final InjectedValue<UserTransactionRegistry> userTransactionRegistry = new InjectedValue<UserTransactionRegistry>();
     private final InjectedValue<JTAEnvironmentBean> jtaEnvironmentBean = new InjectedValue<>();
-
+    private final InjectedValue<SuspendController> suspendControllerInjectedValue = new InjectedValue<>();
 
     private com.arjuna.ats.jbossatx.jta.TransactionManagerService value;
     private ObjStoreBrowser objStoreBrowser;
@@ -68,6 +72,33 @@ public final class ArjunaTransactionManagerService implements Service<com.arjuna
     private boolean coordinatorEnableStatistics;
     private int coordinatorDefaultTimeout;
     private final boolean jts;
+    private SuspendController suspendController;
+    private ResumableService resumableService;
+
+    private final ServerActivity serverActivity = new ServerActivity() {
+        @Override
+        public void preSuspend(ServerActivityCallback listener) {
+
+            deactivate();
+            listener.done();
+        }
+
+        public void suspended(ServerActivityCallback listener) {
+            System.out.printf("ArjunaTransactionManagerService suspended ...%n");
+            if (resumableService == null)
+                System.out.printf("ArjunaTransactionManagerService service did not get the preSuspend callback%n");
+            else if (resumableService.isSuspended())
+                listener.done();
+            else
+                System.out.printf("but ArjunaTransactionManagerService service is still active ...%n");
+        }
+
+        @Override
+        public void resume() {
+            if (resumableService != null)
+                activate();
+        }
+    };
 
     public ArjunaTransactionManagerService(final boolean coordinatorEnableStatistics, final int coordinatorDefaultTimeout,
                                            final boolean transactionStatusManagerEnable, final boolean jts) {
@@ -79,6 +110,7 @@ public final class ArjunaTransactionManagerService implements Service<com.arjuna
 
     @Override
     public synchronized void start(final StartContext context) throws StartException {
+        suspendController = suspendControllerInjectedValue.getValue();
 
         final CoordinatorEnvironmentBean coordinatorEnvironmentBean = arjPropertyManager.getCoordinatorEnvironmentBean();
         coordinatorEnvironmentBean.setEnableStatistics(coordinatorEnableStatistics);
@@ -144,6 +176,8 @@ public final class ArjunaTransactionManagerService implements Service<com.arjuna
             value = service;
         }
 
+        suspendController.registerActivity(serverActivity);
+
         try {
             objStoreBrowser.start();
         } catch (Exception e) {
@@ -157,6 +191,7 @@ public final class ArjunaTransactionManagerService implements Service<com.arjuna
         value.stop();
         value.destroy();
         objStoreBrowser.stop();
+        suspendController.unRegisterActivity(serverActivity);
         value = null;
     }
 
@@ -179,5 +214,39 @@ public final class ArjunaTransactionManagerService implements Service<com.arjuna
 
     public Injector<JTAEnvironmentBean> getJTAEnvironmentBeanInjector() {
         return this.jtaEnvironmentBean;
+    }
+
+    public InjectedValue<SuspendController> getSuspendControllerInjectedValue() {
+        return suspendControllerInjectedValue;
+    }
+
+    private void activate() {
+        System.out.printf("ArjunaTransactionManagerService resuming ...%n");
+        resumableService.resumeService();
+
+/*        ClassLoader oldTccl = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
+        try {
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(classLoader);
+
+            // activate
+        } catch (ResourceException e) {
+            throw new RuntimeException(e);
+        } finally {
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(oldTccl);
+        }*/
+    }
+
+    private void deactivate() {
+        System.out.printf("ArjunaTransactionManagerService suspending ...%n");
+        resumableService = value.suspendService();
+/*        ClassLoader oldTccl = WildFlySecurityManager.getCurrentContextClassLoaderPrivileged();
+        try {
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(classLoader);
+            // deactivate
+        } catch (ResourceException e) {
+            throw new RuntimeException(e);
+        } finally {
+            WildFlySecurityManager.setCurrentContextClassLoaderPrivileged(oldTccl);
+        }*/
     }
 }
